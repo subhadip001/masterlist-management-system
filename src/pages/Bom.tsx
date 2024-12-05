@@ -11,11 +11,19 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PlusIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useBomStore } from "@/store/bomStore";
+import {
+  Table,
+  TableHeader,
+  TableRow,
+  TableHead,
+  TableBody,
+  TableCell,
+} from "@/components/ui/table";
 
 const Bom = () => {
   const { boms, isLoading: isLoadingBoms } = useBom();
   const { items, isLoading: isLoadingItems } = useItems();
-  const { pendingBoms, csvErrors } = useBomStore();
+  const { pendingBoms, csvErrors, setPendingSellItems } = useBomStore();
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -41,6 +49,18 @@ const Bom = () => {
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, [activeTab]);
+
+  // Update pending sell items whenever boms or items change
+  useEffect(() => {
+    if (!isLoadingBoms && !isLoadingItems) {
+      // Find sell items without any BOM entries
+      const sellItems = items.filter((item) => item.type === "sell");
+      const sellItemsWithoutBom = sellItems.filter(
+        (item) => !boms.some((bom) => bom.item_id === item.id)
+      );
+      setPendingSellItems(sellItemsWithoutBom);
+    }
+  }, [boms, items, isLoadingBoms, isLoadingItems, setPendingSellItems]);
 
   // Check if items exist before allowing BOM creation
   const sellOrComponentItems = items.filter(
@@ -93,9 +113,20 @@ const Bom = () => {
         <TabsList>
           <TabsTrigger value="list">BOM List</TabsTrigger>
           <TabsTrigger value="upload">Bulk Upload</TabsTrigger>
-          {pendingBoms.length > 0 && (
+          {(pendingBoms.length > 0 ||
+            items
+              .filter((item) => item.type === "sell")
+              .filter((item) => !boms.some((bom) => bom.item_id === item.id))
+              .length > 0) && (
             <TabsTrigger value="pending">
-              Pending ({pendingBoms.length})
+              Pending (
+              {pendingBoms.length +
+                items
+                  .filter((item) => item.type === "sell")
+                  .filter(
+                    (item) => !boms.some((bom) => bom.item_id === item.id)
+                  ).length}
+              )
             </TabsTrigger>
           )}
           {csvErrors.length > 0 && (
@@ -120,9 +151,65 @@ const Bom = () => {
           <BomUpload />
         </TabsContent>
 
-        {pendingBoms.length > 0 && (
+        {(pendingBoms.length > 0 ||
+          items
+            .filter((item) => item.type === "sell")
+            .filter((item) => !boms.some((bom) => bom.item_id === item.id))
+            .length > 0) && (
           <TabsContent value="pending">
-            <BomList boms={pendingBoms} isLoading />
+            {items
+              .filter((item) => item.type === "sell")
+              .filter((item) => !boms.some((bom) => bom.item_id === item.id))
+              .length > 0 && (
+              <div className="mb-8">
+                <h3 className="text-lg font-medium mb-4">
+                  Sell Items Without BOM
+                </h3>
+                <Alert>
+                  <AlertDescription>
+                    The following sell items require at least one BOM entry:
+                  </AlertDescription>
+                </Alert>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Item Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items
+                      .filter((item) => item.type === "sell")
+                      .filter(
+                        (item) => !boms.some((bom) => bom.item_id === item.id)
+                      )
+                      .map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.internal_item_name}</TableCell>
+                          <TableCell>{item.item_description}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setShowAddModal(true);
+                              }}
+                            >
+                              Create BOM
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {pendingBoms.length > 0 && (
+              <div>
+                <h3 className="text-lg font-medium mb-4">Pending BOMs</h3>
+                <BomList boms={pendingBoms} isLoading={isLoadingBoms} />
+              </div>
+            )}
           </TabsContent>
         )}
 

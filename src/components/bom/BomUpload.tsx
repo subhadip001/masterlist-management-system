@@ -18,6 +18,7 @@ import { BOM } from "@/types";
 import { FileDown } from "lucide-react";
 import { useState } from "react";
 import * as XLSX from "xlsx";
+import { useBomStore } from "@/store/bomStore";
 
 type ValidationError = {
   row: number;
@@ -30,7 +31,7 @@ export const BomUpload = () => {
   const [progress, setProgress] = useState(0);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [successCount, setSuccessCount] = useState(0);
-  const { createBom } = useBom();
+  const { setPendingBoms } = useBomStore();
 
   const validateRow = (row: BOM, rowIndex: number): string[] => {
     const errors: string[] = [];
@@ -81,7 +82,7 @@ export const BomUpload = () => {
       }
 
       const validationErrors: ValidationError[] = [];
-      let successfulUploads = 0;
+      const validBoms: BOM[] = [];
 
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
@@ -94,23 +95,17 @@ export const BomUpload = () => {
             data: row,
           });
         } else {
-          try {
-            await createBom(row);
-            successfulUploads++;
-          } catch (error) {
-            validationErrors.push({
-              row: i + 2,
-              errors: [(error as Error).message],
-              data: row,
-            });
-          }
+          validBoms.push(row);
         }
 
         setProgress(((i + 1) / data.length) * 100);
       }
 
       setErrors(validationErrors);
-      setSuccessCount(successfulUploads);
+      if (validBoms.length > 0) {
+        setPendingBoms(validBoms);
+        setSuccessCount(validBoms.length);
+      }
     } catch (error) {
       setErrors([
         {
