@@ -20,7 +20,8 @@ import { useItems } from "@/hooks/useItems";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { FormError } from "../form-error";
-import { generateUniqueId } from "@/lib/utils";
+import { checkItemNameExists, generateUniqueId } from "@/lib/utils";
+import { useItemStore } from "@/store/itemStore";
 
 type ItemFormProps = {
   item?: Item;
@@ -29,6 +30,7 @@ type ItemFormProps = {
 
 const defaultItem: Omit<Item, "id"> = {
   internal_item_name: "",
+  customer_item_name: "",
   tenant_id: generateUniqueId(),
   item_description: "",
   uom: UOM.nos,
@@ -38,27 +40,59 @@ const defaultItem: Omit<Item, "id"> = {
   max_buffer: 0,
   min_buffer: 0,
   is_deleted: false,
-  customer_item_name: "",
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   additional_attributes: {
     avg_weight_needed: false,
+    scrap_type: "",
   },
 };
 
 export const ItemForm = ({ item, onClose }: ItemFormProps) => {
   const [formData, setFormData] = useState<Omit<Item, "id">>(
-    item || defaultItem
+    item ? { ...defaultItem, ...item } : defaultItem
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const { createItem, updateItem } = useItems();
+  const { createItem, updateItem, items } = useItems();
+  const { pendingItems } = useItemStore();
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
+    const allItems = [...items, ...pendingItems];
 
     // Required fields
     if (!formData.internal_item_name) {
       newErrors.internal_item_name = "Item name is required";
+    }
+
+    if (!formData.customer_item_name) {
+      newErrors.customer_item_name = "Customer item name is required";
+    }
+
+    // Check for duplicate internal item name
+    if (formData.internal_item_name) {
+      const isDuplicate = allItems.some(
+        (existingItem) =>
+          existingItem.internal_item_name?.toLowerCase() ===
+            formData.internal_item_name.toLowerCase() &&
+          (!item || existingItem.id !== item.id)
+      );
+      if (isDuplicate) {
+        newErrors.internal_item_name = "This item name already exists";
+      }
+    }
+
+    // Check for duplicate customer item name
+    if (formData.customer_item_name) {
+      const isDuplicate = allItems.some(
+        (existingItem) =>
+          existingItem.customer_item_name?.toLowerCase() ===
+            formData.customer_item_name?.toLowerCase() &&
+          (!item || existingItem.id !== item.id)
+      );
+      if (isDuplicate) {
+        newErrors.customer_item_name = "This customer item name already exists";
+      }
     }
 
     if (!formData.type) {
@@ -147,6 +181,20 @@ export const ItemForm = ({ item, onClose }: ItemFormProps) => {
               }}
             />
             <FormError message={errors.internal_item_name} />
+          </div>
+          <div>
+            <Label>Customer Item Name</Label>
+            <Input
+              value={formData.customer_item_name}
+              placeholder="Enter customer item name"
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  customer_item_name: e.target.value,
+                })
+              }
+            />
+            <FormError message={errors.customer_item_name} />
           </div>
           <div>
             <Label>Item Description</Label>

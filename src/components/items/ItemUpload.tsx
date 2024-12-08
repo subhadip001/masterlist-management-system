@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useItemStore } from "@/store/itemStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import * as XLSX from "xlsx";
 import { Item, ItemTypes, UOM } from "@/types";
 import { Download, Upload, FileDown } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { generateUniqueId } from "@/lib/utils";
+import { checkItemNameExists, generateUniqueId } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -34,7 +34,21 @@ export const ItemUpload = () => {
   const { setPendingItems } = useItemStore();
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [successCount, setSuccessCount] = useState(0);
-  const { createItem } = useItems();
+  const { createItem, items, isLoading } = useItems();
+
+  useEffect(() => {
+    console.log("ItemUpload mounted");
+    console.log("Items loading status:", isLoading);
+    console.log("Current items:", items);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      console.log("Items loading completed");
+      console.log("Items count:", items.length);
+      console.log("Items:", items);
+    }
+  }, [isLoading, items]);
 
   const validateRow = (row: CSVRow, rowIndex: number): string[] => {
     const errors: string[] = [];
@@ -83,6 +97,11 @@ export const ItemUpload = () => {
   };
 
   const processFile = async (file: File) => {
+    if (isLoading) {
+      console.log("Items are still loading, please wait...");
+      return;
+    }
+
     setIsUploading(true);
     setProgress(0);
     setErrors([]);
@@ -96,7 +115,6 @@ export const ItemUpload = () => {
         const workbook = XLSX.read(buffer);
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-        console.log(jsonData);
 
         // Transform the data to ensure consistent field names
         data = jsonData.map((row: any) => ({
@@ -116,7 +134,6 @@ export const ItemUpload = () => {
           updatedAt: row.updatedAt,
           additional_attributes: {
             avg_weight_needed: row.additional_attributes__avg_weight_needed,
-
             scrap_type:
               row.type?.toLowerCase().trim() === ItemTypes.sell
                 ? row.additional_attributes__scrap_type?.trim()
@@ -140,6 +157,10 @@ export const ItemUpload = () => {
 
       const validationErrors: ValidationError[] = [];
       const validItems: Omit<Item, "id">[] = [];
+      const existingItems: Omit<Item, "id">[] = [];
+
+      console.log("Processing with items:", items.length);
+
       const totalRows = data.length;
 
       for (let i = 0; i < data.length; i++) {
@@ -153,7 +174,7 @@ export const ItemUpload = () => {
             data: row,
           });
         } else {
-          validItems.push({
+          const transformedItem = {
             internal_item_name: row.internal_item_name.trim(),
             tenant_id: generateUniqueId(),
             type: row.type.toLowerCase().trim() as ItemTypes,
@@ -165,23 +186,42 @@ export const ItemUpload = () => {
             is_deleted: false,
             additional_attributes: {
               avg_weight_needed: row.additional_attributes?.avg_weight_needed,
-
               scrap_type:
-                row.additional_attributes?.scrap_type?.trim() || undefined,
+                row.type?.toLowerCase().trim() === ItemTypes.sell
+                  ? row.additional_attributes?.scrap_type?.trim()
+                  : undefined,
             },
             item_description: row.item_description?.trim() || "",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-          });
+          };
+
+          const isItemExists = checkItemNameExists(
+            transformedItem.internal_item_name,
+            items
+          );
+
+          if (isItemExists) {
+            console.log("Item exists:", transformedItem.internal_item_name);
+            existingItems.push(transformedItem);
+          } else {
+            console.log("New item:", transformedItem.internal_item_name);
+            validItems.push(transformedItem);
+          }
         }
 
         setProgress(((i + 1) / totalRows) * 100);
       }
 
       setErrors(validationErrors);
+
       if (validItems.length > 0) {
-        setPendingItems(validItems as Item[]);
+        await Promise.all(validItems.map((item) => createItem(item)));
         setSuccessCount(validItems.length);
+      }
+
+      if (existingItems.length > 0) {
+        setPendingItems(existingItems as Item[]);
       }
     } catch (error) {
       console.error("Error processing file:", error);

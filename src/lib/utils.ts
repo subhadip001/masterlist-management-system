@@ -7,12 +7,35 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function checkItemNameExists(itemName: string, items: Item[]): boolean {
-  return items.some(
-    (item) =>
-      item.internal_item_name.toLowerCase() === itemName.toLowerCase() ||
-      (item.customer_item_name &&
-        item.customer_item_name.toLowerCase() === itemName.toLowerCase())
-  );
+  if (!itemName) {
+    return false;
+  }
+
+  if (!items || !Array.isArray(items)) {
+    return false;
+  }
+
+  return items.some((item) => {
+    if (!item) {
+      console.log("Warning: Found null/undefined item in array");
+      return false;
+    }
+
+    const internalNameMatch =
+      item.internal_item_name?.toLowerCase() === itemName.toLowerCase();
+    const customerNameMatch =
+      item.customer_item_name?.toLowerCase() === itemName.toLowerCase();
+
+    if (internalNameMatch || customerNameMatch) {
+      console.log("Found matching item:", {
+        itemName,
+        internalName: item.internal_item_name,
+        customerName: item.customer_item_name,
+      });
+    }
+
+    return internalNameMatch || customerNameMatch;
+  });
 }
 
 export const generateUniqueId = () => {

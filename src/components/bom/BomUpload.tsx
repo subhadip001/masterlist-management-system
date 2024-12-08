@@ -1,5 +1,3 @@
-// Component for handling BOM uploads
-
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBom } from "@/hooks/useBom";
+import { useItems } from "@/hooks/useItems";
 import { BOM } from "@/types";
 import { FileDown } from "lucide-react";
 import { useState } from "react";
@@ -31,23 +30,39 @@ export const BomUpload = () => {
   const [progress, setProgress] = useState(0);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [successCount, setSuccessCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const { setPendingBoms } = useBomStore();
+  const { items } = useItems();
+  const { createBom } = useBom();
 
-  const validateRow = (row: BOM, rowIndex: number): string[] => {
+  const validateRow = (
+    row: BOM,
+    rowIndex: number
+  ): { errors: string[]; isPending: boolean } => {
     const errors: string[] = [];
+    let isPending = false;
 
-    // Check required fields
     if (!row.item_id) errors.push("Item ID is required");
     if (!row.component_id) errors.push("Component ID is required");
     if (!row.quantity?.toString().trim()) errors.push("Quantity is required");
 
-    // Quantity validation
     const quantity = Number(row.quantity);
     if (isNaN(quantity) || quantity <= 0) {
       errors.push("Quantity must be a positive number");
     }
 
-    return errors;
+    if (errors.length === 0) {
+      const itemExists = items.some((item) => item.id === row.item_id);
+      const componentExists = items.some(
+        (item) => item.id === row.component_id
+      );
+
+      if (!itemExists || !componentExists) {
+        isPending = true;
+      }
+    }
+
+    return { errors, isPending };
   };
 
   const processFile = async (file: File) => {
@@ -55,6 +70,7 @@ export const BomUpload = () => {
     setProgress(0);
     setErrors([]);
     setSuccessCount(0);
+    setPendingCount(0);
 
     try {
       let data: BOM[];
@@ -66,7 +82,6 @@ export const BomUpload = () => {
         const jsonData = XLSX.utils.sheet_to_json(firstSheet);
         console.log("Parsed XLSX data:", jsonData);
 
-        // Transform the data to match BOM type
         data = jsonData.map((row: any) => ({
           id: row.id,
           item_id: Number(row.item_id),
@@ -83,17 +98,20 @@ export const BomUpload = () => {
 
       const validationErrors: ValidationError[] = [];
       const validBoms: BOM[] = [];
+      const pendingBoms: BOM[] = [];
 
       for (let i = 0; i < data.length; i++) {
         const row = data[i];
-        const rowErrors = validateRow(row, i);
+        const { errors, isPending } = validateRow(row, i);
 
-        if (rowErrors.length > 0) {
+        if (errors.length > 0) {
           validationErrors.push({
-            row: i + 2, // +2 because Excel rows start at 1 and we have a header row
-            errors: rowErrors,
+            row: i + 2,
+            errors,
             data: row,
           });
+        } else if (isPending) {
+          pendingBoms.push(row);
         } else {
           validBoms.push(row);
         }
@@ -101,11 +119,23 @@ export const BomUpload = () => {
         setProgress(((i + 1) / data.length) * 100);
       }
 
-      setErrors(validationErrors);
-      if (validBoms.length > 0) {
-        setPendingBoms(validBoms);
-        setSuccessCount(validBoms.length);
+      // Handle valid BOMs
+      for (const bom of validBoms) {
+        try {
+          await createBom(bom);
+        } catch (error) {
+          validationErrors.push({
+            row: 0,
+            errors: [(error as Error).message],
+            data: bom,
+          });
+        }
       }
+
+      setErrors(validationErrors);
+      setPendingBoms(pendingBoms);
+      setSuccessCount(validBoms.length);
+      setPendingCount(pendingBoms.length);
     } catch (error) {
       setErrors([
         {
@@ -182,7 +212,9 @@ export const BomUpload = () => {
       {successCount > 0 && (
         <Alert>
           <AlertDescription>
-            Successfully uploaded {successCount} BOM entries
+            Successfully added {successCount} BOM entries
+            {pendingCount > 0 &&
+              ` and ${pendingCount} entries are pending (waiting for items to be created)`}
           </AlertDescription>
         </Alert>
       )}

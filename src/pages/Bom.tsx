@@ -50,15 +50,9 @@ const Bom = () => {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, [activeTab]);
 
-  // Update pending sell items whenever boms or items change
   useEffect(() => {
     if (!isLoadingBoms && !isLoadingItems) {
-      // Find sell items without any BOM entries
-      const sellItems = items.filter((item) => item.type === "sell");
-      const sellItemsWithoutBom = sellItems.filter(
-        (item) => !boms.some((bom) => bom.item_id === item.id)
-      );
-      setPendingSellItems(sellItemsWithoutBom);
+      setPendingSellItems([]);
     }
   }, [boms, items, isLoadingBoms, isLoadingItems, setPendingSellItems]);
 
@@ -113,20 +107,9 @@ const Bom = () => {
         <TabsList>
           <TabsTrigger value="list">BOM List</TabsTrigger>
           <TabsTrigger value="upload">Bulk Upload</TabsTrigger>
-          {(pendingBoms.length > 0 ||
-            items
-              .filter((item) => item.type === "sell")
-              .filter((item) => !boms.some((bom) => bom.item_id === item.id))
-              .length > 0) && (
+          {pendingBoms.length > 0 && (
             <TabsTrigger value="pending">
-              Pending (
-              {pendingBoms.length +
-                items
-                  .filter((item) => item.type === "sell")
-                  .filter(
-                    (item) => !boms.some((bom) => bom.item_id === item.id)
-                  ).length}
-              )
+              Pending ({pendingBoms.length})
             </TabsTrigger>
           )}
           {csvErrors.length > 0 && (
@@ -151,89 +134,43 @@ const Bom = () => {
           <BomUpload />
         </TabsContent>
 
-        {(pendingBoms.length > 0 ||
-          items
-            .filter((item) => item.type === "sell")
-            .filter((item) => !boms.some((bom) => bom.item_id === item.id))
-            .length > 0) && (
-          <TabsContent value="pending">
-            {items
-              .filter((item) => item.type === "sell")
-              .filter((item) => !boms.some((bom) => bom.item_id === item.id))
-              .length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-medium mb-4">
-                  Sell Items Without BOM
-                </h3>
-                <Alert>
-                  <AlertDescription>
-                    The following sell items require at least one BOM entry:
-                  </AlertDescription>
-                </Alert>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item Name</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items
-                      .filter((item) => item.type === "sell")
-                      .filter(
-                        (item) => !boms.some((bom) => bom.item_id === item.id)
-                      )
-                      .map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.internal_item_name}</TableCell>
-                          <TableCell>{item.item_description}</TableCell>
-                          <TableCell>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setShowAddModal(true);
-                              }}
-                            >
-                              Create BOM
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {pendingBoms.length > 0 && (
-              <div>
-                <h3 className="text-lg font-medium mb-4">Pending BOMs</h3>
-                <BomList boms={pendingBoms} isLoading={isLoadingBoms} />
-              </div>
-            )}
-          </TabsContent>
-        )}
-
-        {csvErrors.length > 0 && (
-          <TabsContent value="errors">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-medium">Upload Errors</h3>
-                <Button variant="outline" onClick={() => {}}>
-                  Download Errors
-                </Button>
-              </div>
-              <div className="space-y-4">
-                {csvErrors.map((error, index) => (
-                  <Alert key={index} variant="destructive">
-                    <AlertDescription>
-                      Row {error.row}: {error.errors.join(", ")}
-                    </AlertDescription>
-                  </Alert>
-                ))}
-              </div>
+        <TabsContent value="pending">
+          {pendingBoms.length > 0 ? (
+            <BomList boms={pendingBoms} />
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No pending BOMs from bulk upload.
             </div>
-          </TabsContent>
-        )}
+          )}
+        </TabsContent>
+
+        <TabsContent value="errors">
+          {csvErrors.length > 0 && (
+            <div className="space-y-4">
+              <Alert variant="destructive">
+                <AlertDescription>
+                  The following rows from your upload had errors:
+                </AlertDescription>
+              </Alert>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Row</TableHead>
+                    <TableHead>Errors</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {csvErrors.map((error, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{error.row}</TableCell>
+                      {/* <TableCell>{error.errors}</TableCell> */}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {showAddModal && <BomForm onClose={() => setShowAddModal(false)} />}
